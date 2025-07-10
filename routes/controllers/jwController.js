@@ -3,7 +3,7 @@ import connection from '../../data/jw_db.js'
 const index = (req, res, next) => {
 
     const sql = `
-    SELECT * FROM products`
+    SELECT * FROM product`
 
     connection.query(sql, (err, productsResults) => {
         if (err) return next(err);
@@ -25,7 +25,7 @@ const show = (req, res, next) => {
     const { id } = req.params
     const sql = `
     SELECT *
-    FROM products
+    FROM product
     WHERE id = ?
     `
 
