@@ -7,8 +7,16 @@ const index = (req, res, next) => {
 
     connection.query(sql, (err, productsResults) => {
         if (err) return next(err);
-        res.status(200).json(productsResults)
+        const products = productsResults.map(curProduct => {
+            return {
+                ...curProduct, 
+                image_url : `${req.protocol}://${req.get('host')}/img/${curProduct.slug}.png`
+            }
+        })
+        res.status(200).json(products)
     })
+
+   
 
 
 }
