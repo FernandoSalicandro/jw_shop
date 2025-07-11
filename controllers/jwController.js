@@ -17,23 +17,27 @@ const index = (req, res, next) => {
 };
 
 const show = (req, res, next) => {
-  const { id } = req.params;
+  const { slug } = req.params;
   const sql = `
     SELECT *
     FROM product
-    WHERE id = ?
+    WHERE slug = ?
     `;
 
-  connection.query(sql, [id], (err, productResults) => {
+  connection.query(sql, [slug], (err, productResults) => {
     if (err) return next(err);
     if (productResults.length === 0)
       return res.status(404).json({
         message: "Prodotto Non Trovato",
       });
-    res.status(200).json(productResults);
+
+    const product = {
+      ...productResults[0],
+      image_url: `${req.protocol}://${req.get("host")}/img/${productResults[0].slug}.png`,
+    };
+
+    res.status(200).json(product);
   });
 };
-
-
 
 export default { index, show };
