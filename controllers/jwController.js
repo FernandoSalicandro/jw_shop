@@ -1,4 +1,4 @@
-import connection from '../../data/jw_db.js'
+import connection from '../data/jw_db.js'
 
 const index = (req, res, next) => {
 

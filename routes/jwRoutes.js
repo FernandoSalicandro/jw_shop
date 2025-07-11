@@ -1,5 +1,5 @@
 import express from 'express';
-import jwController from './controllers/jwController.js';
+import jwController from '../controllers/jwController.js';
 
 const router = express.Router();
 
