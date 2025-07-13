@@ -1,10 +1,26 @@
 import connection from "../data/jw_db.js";
 
 const index = (req, res, next) => {
-  const sql = `
-    SELECT * FROM product`;
+  const { search } = req.query;
+  let sql = '';
+  let params = [];
 
-  connection.query(sql, (err, productsResults) => {
+  if (search) {
+    sql = `
+    SELECT * 
+    FROM product 
+    WHERE name LIKE ?
+    OR description LIKE ?;
+    `;
+    params = [`%${search}%`, `%${search}%`];
+  } else {
+
+    sql = `
+    SELECT * FROM product`;
+  }
+
+
+  connection.query(sql, params, (err, productsResults) => {
     if (err) return next(err);
     const products = productsResults.map((curProduct) => {
       return {
