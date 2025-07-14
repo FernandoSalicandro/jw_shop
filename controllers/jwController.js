@@ -1,24 +1,40 @@
 import connection from "../data/jw_db.js";
 
 const index = (req, res, next) => {
-  const { search } = req.query;
-  let sql = '';
+  const { search, category } = req.query;
+  let sql = "";
   let params = [];
 
-  if (search) {
+  if (search && category) {
     sql = `
-    SELECT * 
-    FROM product 
-    WHERE name LIKE ?
-    OR description LIKE ?;
+    SELECT product.* 
+    FROM product
+    JOIN product_categories ON product.id = product_categories.product_id
+    JOIN categories ON product_categories.category_id = categories.id
+    WHERE (product.name LIKE ? OR product.description LIKE ?)
+    AND categories.name = ?
+    `;
+    params = [`%${search}%`, `%${search}%`, category];
+  } else if (search) {
+    sql = `
+      SELECT * FROM product
+      WHERE name LIKE ?
+      OR description LIKE ?
     `;
     params = [`%${search}%`, `%${search}%`];
+  } else if (category) {
+    sql = `
+      SELECT product.* 
+      FROM product
+      JOIN product_categories ON product.id = product_categories.product_id
+      JOIN categories ON product_categories.category_id = categories.id
+      WHERE categories.name = ?
+      `;
+    params = [category];
   } else {
-
     sql = `
     SELECT * FROM product`;
   }
-
 
   connection.query(sql, params, (err, productsResults) => {
     if (err) return next(err);
@@ -57,3 +73,10 @@ const show = (req, res, next) => {
 };
 
 export default { index, show };
+
+// QUERY PER FILTRARE IN CATEGORIE
+// SELECT *
+// FROM product
+// JOIN product_categories ON product.id = product_categories.product_id
+// JOIN categories ON product_categories.category_id = categories.id
+// WHERE categories.name = ?
