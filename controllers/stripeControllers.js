@@ -23,7 +23,7 @@ const createCheckoutSession = async (req, res) => {
                 quantity: item.quantity,
             })),
             customer_email: customerEmail,
-            success_url: `${process.env.FE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
+            success_url: `${process.env.FE_URL}/thank-you`,
             cancel_url: `${process.env.FE_URL}/cart`,
         });
 
