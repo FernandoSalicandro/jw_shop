@@ -68,67 +68,66 @@ const confirmOrder = async (req, res) => {
       const orderId = result.insertId;
 
       // Inserisco tutti i prodotti in order_items
-     const itemQueries = cart.map((item) => {
-  return new Promise((resolve, reject) => {
-    const insertItemSQL = `
-      INSERT INTO order_product (
-        order_id, 
-        product_id, 
-        name_at_time,  // Cambiato da product_name
-        quantity, 
-        price_at_time, // Cambiato da price
-        subtotal
-      ) VALUES (?, ?, ?, ?, ?, ?)
-    `;
-    
-    const { id, name, quantity, price } = item;
-    const subtotal = price * quantity;
-    
-    const itemValues = [
-      orderId,
-      id,
-      name,
-      quantity, 
-      price,
-      subtotal
-    ];
+      const itemQueries = cart.map((item) => {
+        return new Promise((resolve, reject) => {
+          const insertItemSQL = `
+            INSERT INTO order_product (
+              order_id,
+              product_id,
+              product_name,
+              quantity,
+              price,
+              subtotal
+            ) VALUES (?, ?, ?, ?, ?, ?)
+          `;
+          
+          const subtotal = item.price * item.quantity;
+          
+          const itemValues = [
+            orderId,
+            item.id,
+            item.name,
+            item.quantity,
+            item.price,
+            subtotal
+          ];
 
-    connection.query(insertItemSQL, itemValues, (err) => {
-      if (err) {
-        console.error("Errore inserimento item:", err);
-        return reject(err);
-      }
-      resolve();
-    });
-  });
-});
+          connection.query(insertItemSQL, itemValues, (err) => {
+            if (err) {
+              console.error("Errore inserimento item:", err);
+              return reject(err);
+            }
+            resolve();
+          });
+        });
+      });
 
       Promise.all(itemQueries)
         .then(async () => {
           // Costruisci contenuto email
           const customerMessage = `
-    <h2>Ciao ${formData.firstName}, grazie per il tuo ordine!</h2>
-    <p>Riepilogo:</p>
-    <ul>
-      ${cart.map((item) => `<li>${item.quantity}x ${item.name} – ${(item.quantity * item.price).toFixed(2)} €</li>`).join("")}
-    </ul>
-    <p><strong>Totale: ${total_price.toFixed(2)} €</strong></p>
-    <p>Riceverai aggiornamenti sulla spedizione a questo indirizzo: ${formData.email}</p>
-  `;
+            <h2>Ciao ${formData.firstName}, grazie per il tuo ordine!</h2>
+            <p>Riepilogo:</p>
+            <ul>
+              ${cart.map((item) => `<li>${item.quantity}x ${item.name} – ${(item.quantity * item.price).toFixed(2)} €</li>`).join("")}
+            </ul>
+            <p><strong>Totale: ${total_price.toFixed(2)} €</strong></p>
+            <p>Riceverai aggiornamenti sulla spedizione a questo indirizzo: ${formData.email}</p>
+          `;
 
           const adminMessage = `
-    <h2>Nuovo ordine ricevuto</h2>
-    <p>Email cliente: ${formData.email}</p>
-    <p>Totale: ${total_price.toFixed(2)} €</p>
-    <p>Ordine ID: ${orderId}</p>
-    <p>Controlla il pannello admin per gestirlo.</p>
-  `;
+            <h2>Nuovo ordine ricevuto</h2>
+            <p>Email cliente: ${formData.email}</p>
+            <p>Totale: ${total_price.toFixed(2)} €</p>
+            <p>Ordine ID: ${orderId}</p>
+            <p>Controlla il pannello admin per gestirlo.</p>
+          `;
 
           try {
             // Mail al cliente
             await sendOrderConfirmation(formData.email, "Conferma ordine - JW Shop", customerMessage);
 
-            // Mail all’admin
+            // Mail all'admin
             await sendOrderConfirmation("admin@jwshop.com", "Nuovo ordine ricevuto", adminMessage);
           } catch (emailErr) {
             console.error("Errore invio email:", emailErr);

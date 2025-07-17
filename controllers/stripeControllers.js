@@ -2,6 +2,7 @@ import Stripe from 'stripe';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
+// In stripeControllers.js
 const createPaymentIntent = (req, res) => {
   const { amount, customerEmail, items } = req.body;
 
@@ -9,13 +10,21 @@ const createPaymentIntent = (req, res) => {
     return res.status(400).json({ error: 'Dati mancanti o prodotti non validi' });
   }
 
+  // Riduci le informazioni nei metadata
+  const simplifiedItems = items.map(item => ({
+    id: item.id,
+    name: item.name,
+    quantity: item.quantity
+  }));
+
   stripe.paymentIntents.create({
     amount: Math.round(amount * 100),
     currency: 'eur',
     receipt_email: customerEmail,
     automatic_payment_methods: { enabled: true },
     metadata: {
-      order: JSON.stringify(items)
+      itemCount: items.length.toString(),
+      totalAmount: amount.toString()
     }
   }, (err, paymentIntent) => {
     if (err) {
