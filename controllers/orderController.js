@@ -68,26 +68,40 @@ const confirmOrder = async (req, res) => {
       const orderId = result.insertId;
 
       // Inserisco tutti i prodotti in order_items
-      const itemQueries = cart.map((item) => {
-        const { id: product_id, name: product_name, quantity, price } = item;
-        const subtotal = price * quantity;
+     const itemQueries = cart.map((item) => {
+  return new Promise((resolve, reject) => {
+    const insertItemSQL = `
+      INSERT INTO order_product (
+        order_id, 
+        product_id, 
+        name_at_time,  // Cambiato da product_name
+        quantity, 
+        price_at_time, // Cambiato da price
+        subtotal
+      ) VALUES (?, ?, ?, ?, ?, ?)
+    `;
+    
+    const { id, name, quantity, price } = item;
+    const subtotal = price * quantity;
+    
+    const itemValues = [
+      orderId,
+      id,
+      name,
+      quantity, 
+      price,
+      subtotal
+    ];
 
-        return new Promise((resolve, reject) => {
-          const insertItemSQL = `
-            INSERT INTO order_product (order_id, product_id, product_name, quantity, price, subtotal)
-            VALUES (?, ?, ?, ?, ?, ?)
-          `;
-          const itemValues = [orderId, product_id, product_name, quantity, price, subtotal];
-
-          connection.query(insertItemSQL, itemValues, (err) => {
-            if (err) {
-              console.error("Errore inserimento item:", err);
-              return reject(err);
-            }
-            resolve();
-          });
-        });
-      });
+    connection.query(insertItemSQL, itemValues, (err) => {
+      if (err) {
+        console.error("Errore inserimento item:", err);
+        return reject(err);
+      }
+      resolve();
+    });
+  });
+});
 
       Promise.all(itemQueries)
         .then(async () => {
