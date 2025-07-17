@@ -3,6 +3,7 @@ import jwController from "../controllers/jwController.js";
 import confirmOrder from "../controllers/orderController.js";
 import relatedController from "../controllers/relatedController.js";
 import stripeController from "../controllers/stripeControllers.js";
+import stockController from '../controllers/stockController.js'
 
 const router = express.Router();
 
@@ -16,5 +17,7 @@ router.post("/confirm", confirmOrder);
 //aggiungo la rotta per il paymentIntent
 router.post('/create-payment-intent', stripeController.createPaymentIntent)
 //ora il backend può ricevere il client secret e procedere alla creazione del pagamento
+router.post('/scale-stock', stockController.scaleStock);
+
 
 export default router;
