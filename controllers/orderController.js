@@ -1,88 +1,128 @@
-import connection from "../data/jw_db.js"; // Importa la connessione al database MySQL
+import Stripe from "stripe";
+import connection from "../data/jw_db.js";
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const confirmOrder = (req, res, next) => {
-  // Estrai i dati dell'ordine dal body della richiesta
-  const { firstName, lastName, email,  phoneNumber, billingAddress, paymentMethod, cart} = req.body;
-  console.log("Dati ricevuti:", req.body);
+const confirmOrder = async (req, res) => {
+  const { formData, cart, selectedCountry, selectedRegion, subtotal_price, discount_value, total_price, payment_method } = req.body;
 
-  // Validazione base: controlla che tutti i campi obbligatori siano presenti
-  if (!firstName || !lastName || !email || !phoneNumber || !billingAddress || !Array.isArray(cart) || cart.length === 0 || !paymentMethod) {
-    return res.status(400).json({ success: false, message: "Dati mancanti o non validi." });
-  }
+  try {
+    // 1. Crea PaymentIntent su Stripe
+    const paymentIntent = await stripe.paymentIntents.create({
+      amount: Math.round(total_price * 100),
+      currency: "eur",
+      metadata: {
+        email: formData.email,
+        name: `${formData.firstName} ${formData.lastName}`,
+      },
+    });
 
-  // Calcolo del totale dell'ordine (prezzo fittizio: 100€ per ogni unità)
-  const totalPrice = cart.reduce((acc, item) => acc + item.quantity * 1000, 0);
+    // 2. Indirizzo in formato testo
+    const billing_address = `${formData.address}${formData.apartment ? ", " + formData.apartment : ""}`;
+    const shipping_address = `${formData.address}${formData.apartment ? ", " + formData.apartment : ""}, ${formData.city}, ${selectedRegion}, ${selectedCountry} - ${formData.postalCode}`;
 
-  // Inizia una transazione per garantire la consistenza dei dati
-  connection.beginTransaction((err) => {
-    if (err) return next(err); // Se c'è un errore nel creare la transazione, passa l'errore al middleware
-
-    // Query per inserire l'ordine nella tabella `orders`
-    const qOrder = `
-      INSERT INTO orders (first_name, last_name, email, phone_number, billing_address, payment_method, total_price)
-      VALUES (?, ?, ?, ?, ?, ?, ?)
+    // 3. Query per salvare l'ordine
+    const sql = `
+      INSERT INTO orders (
+        stripe_payment_intent_id,
+        total_price,
+        subtotal_price,
+        discount_code,
+        discount_value,
+        payment_method,
+        billing_address,
+        shipping_address,
+        email,
+        first_name,
+        last_name,
+        phone_number,
+        payment_status,
+        order_status
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `;
 
-    // Esegui l'inserimento dell'ordine
-    connection.query(qOrder, [firstName, lastName, email, phoneNumber, billingAddress, paymentMethod, totalPrice], (err, result) => {
+    const values = [
+      paymentIntent.id,
+      total_price,
+      subtotal_price,
+      "", // discount_code
+      discount_value,
+      payment_method,
+      billing_address,
+      shipping_address,
+      formData.email,
+      formData.firstName,
+      formData.lastName,
+      formData.phone,
+      "pending",
+      "in_progress",
+    ];
+
+    connection.query(sql, values, (err, result) => {
       if (err) {
-        // Se qualcosa va storto, annulla la transazione
-        return connection.rollback(() => {
-          console.error("Errore durante l'inserimento:", err); // log utile
-          next(err);
-        });
+        console.error("Errore DB:", err);
+        return res.status(500).json({ error: "Errore nel salvataggio dell'ordine" });
       }
 
-      // Ottieni l'ID dell'ordine appena inserito
       const orderId = result.insertId;
-      
 
-      // Prepara i valori per l'inserimento multiplo nella tabella `order_items`
-      // Ogni riga sarà [orderId, productId, quantity]
-      const values = cart.map((item) => [orderId, item.productId, item.quantity]);
+      // Inserisco tutti i prodotti in order_items
+      const itemQueries = cart.map((item) => {
+        const { id: product_id, name: product_name, quantity, price } = item;
+        const subtotal = price * quantity;
 
-      // Query per inserire i prodotti dell'ordine
-      const qItems = `
-        INSERT INTO order_product (order_id, product_id, quantity)
-        VALUES ?
-      `;
+        return new Promise((resolve, reject) => {
+          const insertItemSQL = `
+            INSERT INTO order_product (order_id, product_id, product_name, quantity, price, subtotal)
+            VALUES (?, ?, ?, ?, ?, ?)
+          `;
+          const itemValues = [orderId, product_id, product_name, quantity, price, subtotal];
 
-      // Esegui l'inserimento degli articoli dell'ordine
-      connection.query(qItems, [values], (err) => {
-        if (err) {
-          // Se qualcosa va storto, annulla la transazione
-          return connection.rollback(() => {
-            console.error("Errore durante l'inserimento:", err); // log utile
-            next(err);
-          });
-        }
-
-        // Se tutto è andato bene, conferma la transazione
-        connection.commit((err) => {
-          if (err) {
-            // Se fallisce il commit finale, annulla tutto
-            return connection.rollback(() => {
-              console.error("Errore durante l'inserimento:", err); // log utile
-              next(err);
-            });
-          }
-
-          // Calcola una data di consegna stimata (4 giorni dopo oggi)
-          const estimatedDelivery = new Date();
-          estimatedDelivery.setDate(estimatedDelivery.getDate() + 4);
-
-          // Rispondi al client con i dettagli dell'ordine confermato
-          return res.status(201).json({
-            success: true,
-            orderId,
-            message: "Ordine salvato e confermato!",
-            estimatedDelivery: estimatedDelivery.toISOString().split("T")[0],
-            totalPrice: totalPrice.toFixed(2),
+          connection.query(insertItemSQL, itemValues, (err) => {
+            if (err) {
+              console.error("Errore inserimento item:", err);
+              return reject(err);
+            }
+            resolve();
           });
         });
       });
+
+      Promise.all(itemQueries)
+        .then(() => {
+          return res.status(200).json({
+            clientSecret: paymentIntent.client_secret,
+            orderId,
+          });
+        })
+        .catch((error) => {
+          console.error("Errore salvataggio prodotti:", error);
+          return res.status(500).json({ error: "Errore nel salvataggio dei prodotti ordinati" });
+        });
     });
+  } catch (err) {
+    console.error("Errore Stripe:", err);
+    return res.status(500).json({ error: err.message });
+  }
+};
+
+const updatePaymentStatus = (req, res) => {
+  const { payment_intent_id, status } = req.body;
+
+  const sql = `UPDATE orders SET payment_status = ? WHERE stripe_payment_intent_id = ?`;
+
+  connection.query(sql, [status, payment_intent_id], (err, result) => {
+    if (err) {
+      console.error("Errore aggiornamento stato pagamento:", err);
+      return res.status(500).json({ error: "Errore aggiornamento" });
+    }
+
+    res.status(200).json({ message: "Stato pagamento aggiornato" });
   });
 };
 
-export default confirmOrder;
+const processingOrder = {
+  confirmOrder,
+  updatePaymentStatus
+};
+
+export default processingOrder;
