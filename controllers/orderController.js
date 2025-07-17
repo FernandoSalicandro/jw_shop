@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 import connection from "../data/jw_db.js";
+import { sendOrderConfirmation } from "../utils/mailer.js";
+
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
 const confirmOrder = async (req, res) => {
@@ -88,7 +90,37 @@ const confirmOrder = async (req, res) => {
       });
 
       Promise.all(itemQueries)
-        .then(() => {
+        .then(async () => {
+          // Costruisci contenuto email
+          const customerMessage = `
+    <h2>Ciao ${formData.firstName}, grazie per il tuo ordine!</h2>
+    <p>Riepilogo:</p>
+    <ul>
+      ${cart.map((item) => `<li>${item.quantity}x ${item.name} – ${(item.quantity * item.price).toFixed(2)} €</li>`).join("")}
+    </ul>
+    <p><strong>Totale: ${total_price.toFixed(2)} €</strong></p>
+    <p>Riceverai aggiornamenti sulla spedizione a questo indirizzo: ${formData.email}</p>
+  `;
+
+          const adminMessage = `
+    <h2>Nuovo ordine ricevuto</h2>
+    <p>Email cliente: ${formData.email}</p>
+    <p>Totale: ${total_price.toFixed(2)} €</p>
+    <p>Ordine ID: ${orderId}</p>
+    <p>Controlla il pannello admin per gestirlo.</p>
+  `;
+
+          try {
+            // Mail al cliente
+            await sendOrderConfirmation(formData.email, "Conferma ordine - JW Shop", customerMessage);
+
+            // Mail all’admin
+            await sendOrderConfirmation("admin@jwshop.com", "Nuovo ordine ricevuto", adminMessage);
+          } catch (emailErr) {
+            console.error("Errore invio email:", emailErr);
+            // Non bloccare la risposta se fallisce la mail
+          }
+
           return res.status(200).json({
             clientSecret: paymentIntent.client_secret,
             orderId,
@@ -122,7 +154,7 @@ const updatePaymentStatus = (req, res) => {
 
 const processingOrder = {
   confirmOrder,
-  updatePaymentStatus
+  updatePaymentStatus,
 };
 
 export default processingOrder;
