@@ -3,94 +3,90 @@ import connection from '../data/jw_db.js';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
 
-const createCheckoutSession = async (req, res) => {
-    try {
-        const { items, customerEmail } = req.body;
+// Webhook per gestire gli eventi Stripe -- correzione : l'ho eliminata perchè non esiste più la checkout session
 
-        const session = await stripe.checkout.sessions.create({
-            payment_method_types: ['card'],
-            mode: 'payment',
-            line_items: items.map(item => ({
-                price_data: {
-                    currency: 'eur',
-                    product_data: {
-                        name: item.name,
-                        images: [item.image_url],
-                    },
-                    //centesimi
-                    unit_amount: Math.round(item.price * 100),
-                },
-                quantity: item.quantity,
-            })),
-            customer_email: customerEmail,
-            success_url: `${process.env.FE_URL}/success?session_id={CHECKOUT_SESSION_ID}`,
-            cancel_url: `${process.env.FE_URL}/cart`,
-        });
+// -- fernando -- aggiungo la funzione createPaymentIntent
+const createPaymentIntent = (req, res) => {
+  //creo e destrutturo i valori che mi servono -- correzione ho aggiunto anche items (ci serve per lo scontrino e per lo stock managing)
+  const { amount, customerEmail, items } = req.body;
 
-        res.json({ url: session.url });
-    } catch (error) {
-        res.status(500).json({ error: error.message });
-    }
-};
+  //faccio una piccola validazione 
+  if (!amount || !customerEmail || !items || !Array.isArray(items) || items.length === 0) {
+    return res.status(400).json({ error: 'Dati mancanti o prodotti non validi' });
+  }
 
-// Webhook per gestire gli eventi Stripe
-const webhook = async (req, res) => {
-    const sig = req.headers['stripe-signature'];
+  //-- correzione: uso Promise.all per far prima tutti i controlli e update, e solo dopo creare il paymentIntent
+  const checkAndUpdateStockPromises = items.map(item => {
+    //prelevo le cose che mi servono : id e quantità
+    const { id, quantity } = item;
 
-    let event;
+    //torno una Promise che verifica stock e scala se tutto ok
+    return new Promise((resolve, reject) => {
+      //validiamo la disponibilità prima dell'update
+      connection.query('SELECT stock_quantity FROM product WHERE id = ?', [id], (err, results) => {
+        if (err) {
+          console.log(` Errore leggendo il prodotto con ID ${id}:`, err);
+          return reject(`Errore verificando disponibilità per il prodotto con ID ${id}`);
+        }
 
-    try {
-        event = stripe.webhooks.constructEvent(
-            req.body,
-            sig,
-            process.env.STRIPE_WEBHOOK_SECRET
-        );
-    } catch (err) {
-        res.status(400).send(`Webhook Error: ${err.message}`);
-        return;
-    }
+        const available = results[0]?.stock_quantity || 0;
 
-    // Gestione degli eventi
-    switch (event.type) {
-        case 'checkout.session.completed':
-            const session = event.data.object;
-            try {
-                // Query per salvare l'ordine nel db
-                await connection.promise().query(`
-                    INSERT INTO orders (
-                        stripe_session_id,
-                        stripe_payment_intent_id,
-                        total_price,
-                        payment_status,
-                        order_status,
-                        email,
-                        created_at
-                    ) VALUES (?, ?, ?, ?, ?, ?, NOW())
-                `, [
-                    session.id,
-                    session.payment_intent,
-                    session.amount_total / 100,
-                    'completed',
-                    'pending',
-                    session.customer_email
-                ]);
-            } catch (error) {
-                console.error('Error saving order:', error);
+        //verifichiamo che la quantità richiesta non sia maggiore di quella disponibile
+        if (available < quantity) {
+          return reject(`Quantità non disponibile per il prodotto con ID ${id}`);
+        }
+
+        //dopo aver passato lo stock managing scaliamo
+        connection.query(
+          'UPDATE product SET stock_quantity = stock_quantity - ? WHERE id = ? AND stock_quantity >= ?',
+          [quantity, id, quantity],
+          (updateErr) => {
+            if (updateErr) {
+              console.log(` Errore scalando il prodotto con ID ${id}:`, updateErr);
+              return reject(`Errore scalando il prodotto con ID ${id}`);
             }
-            break;
+            // se è tutto ok per questo prodotto risolviamo
+            resolve(); 
+          }
+        );
+      });
+    });
+  });
 
-        case 'payment_intent.succeeded':
-            const paymentIntent = event.data.object;
-            break;
-
-        default:
-            console.log(`Unhandled event type ${event.type}`);
-    }
-
-    res.send();
+  //aspettiamo che tutte le promesse vadano a buon fine
+  Promise.all(checkAndUpdateStockPromises)
+    .then(() => {
+      //ok ora creo l'intento di pagamento tramite la funzione createPaymentIntent
+      stripe.paymentIntents.create({
+        //perchè stripe accetta solo i valori in centesimi
+        amount: Math.round(amount * 100),
+        currency: 'eur',
+        receipt_email: customerEmail,
+        //qua sotto dico a stripe che voglio abilitare tutti i metodi di pagamento possibili immaginabili DIOCAN :))))))
+        automatic_payment_methods: { enabled: true },
+        //qua sto aggiungendo il metadata che ci serve per gestire robe tipo il riepilogo
+        metadata: {
+          order: JSON.stringify(items)
+        }
+      }, function (err, paymentIntent) {
+        //qua sotto gestisco l'eventuale errore
+        if (err) {
+          return res.status(500).json({ error: err.message });
+        }
+        //ritorno il client secret che è il codice che mi serve in FRONTEND per CONFERMARE IL PAGAMENTO
+        res.json({ clientSecret: paymentIntent.client_secret });
+      });
+    })
+    .catch(errorMsg => {
+      //qua dentro ci finisce qualsiasi reject di Promise.all
+      console.log(" Errore durante il processo di controllo/scala stock:", errorMsg);
+      res.status(500).json({ error: errorMsg });
+    });
 };
 
 export default {
-    createCheckoutSession,
-    webhook
+  //ho eliminato la checkout session
+  //elimino il webhook
+  //qua modifico l'export per includere il paymentIntent
+  createPaymentIntent
 };

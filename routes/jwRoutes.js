@@ -13,7 +13,8 @@ router.get("/:slug", jwController.show);
 router.post("/confirm", confirmOrder);
 
 // Rotte Stripe - Fernando
-router.post("/create-checkout-session", stripeController.createCheckoutSession);
-router.post("/webhook", express.raw({type: 'application/json'}), stripeController.webhook);
+//aggiungo la rotta per il paymentIntent
+router.post('/create-payment-intent', stripeController.createPaymentIntent)
+//ora il backend può ricevere il client secret e procedere alla creazione del pagamento
 
 export default router;
