@@ -90,37 +90,7 @@ const confirmOrder = async (req, res) => {
       });
 
       Promise.all(itemQueries)
-        .then(async () => {
-          // Costruisci contenuto email
-          const customerMessage = `
-    <h2>Ciao ${formData.firstName}, grazie per il tuo ordine!</h2>
-    <p>Riepilogo:</p>
-    <ul>
-      ${cart.map((item) => `<li>${item.quantity}x ${item.name} – ${(item.quantity * item.price).toFixed(2)} €</li>`).join("")}
-    </ul>
-    <p><strong>Totale: ${total_price.toFixed(2)} €</strong></p>
-    <p>Riceverai aggiornamenti sulla spedizione a questo indirizzo: ${formData.email}</p>
-  `;
-
-          const adminMessage = `
-    <h2>Nuovo ordine ricevuto</h2>
-    <p>Email cliente: ${formData.email}</p>
-    <p>Totale: ${total_price.toFixed(2)} €</p>
-    <p>Ordine ID: ${orderId}</p>
-    <p>Controlla il pannello admin per gestirlo.</p>
-  `;
-
-          try {
-            // Mail al cliente
-            await sendOrderConfirmation(formData.email, "Conferma ordine - JW Shop", customerMessage);
-
-            // Mail all’admin
-            await sendOrderConfirmation("admin@jwshop.com", "Nuovo ordine ricevuto", adminMessage);
-          } catch (emailErr) {
-            console.error("Errore invio email:", emailErr);
-            // Non bloccare la risposta se fallisce la mail
-          }
-
+        .then(() => {
           return res.status(200).json({
             clientSecret: paymentIntent.client_secret,
             orderId,
@@ -139,16 +109,75 @@ const confirmOrder = async (req, res) => {
 
 const updatePaymentStatus = (req, res) => {
   const { payment_intent_id, status } = req.body;
+  console.log("🔥 updatePaymentStatus ricevuto con:", req.body);
 
-  const sql = `UPDATE orders SET payment_status = ? WHERE stripe_payment_intent_id = ?`;
+  const paymentStatus = status;
+  const orderStatus = status === "succeeded" ? "completed" : "cancelled";
 
-  connection.query(sql, [status, payment_intent_id], (err, result) => {
+  const sql = `
+    UPDATE orders
+    SET payment_status = ?, order_status = ?
+    WHERE stripe_payment_intent_id = ?
+  `;
+
+  connection.query(sql, [paymentStatus, orderStatus, payment_intent_id], (err, result) => {
     if (err) {
-      console.error("Errore aggiornamento stato pagamento:", err);
-      return res.status(500).json({ error: "Errore aggiornamento" });
+      console.error("Errore aggiornamento stato ordine:", err);
+      return res.status(500).json({ error: "Errore aggiornamento stato ordine" });
     }
 
-    res.status(200).json({ message: "Stato pagamento aggiornato" });
+    // Se il pagamento è riuscito, recuperiamo i dati per inviare la mail
+    if (status === "succeeded") {
+      const fetchSql = `
+    SELECT o.*, op.product_name, op.quantity, op.price
+    FROM orders o
+    JOIN order_product op ON o.id = op.order_id
+    WHERE o.stripe_payment_intent_id = ?
+  `;
+
+      connection.query(fetchSql, [payment_intent_id], async (err, results) => {
+        if (err) {
+          console.error("Errore nel recupero dati per l'email:", err);
+          return res.status(500).json({ message: "Pagamento aggiornato, ma errore nel recupero ordine per l'email" });
+        }
+
+        if (!results || results.length === 0) {
+          console.error("Nessun risultato trovato per l'email");
+          return res.status(404).json({ message: "Ordine non trovato per invio email" });
+        }
+
+        const orderInfo = results[0];
+        const groupedItems = results.map((item) => `<li>${item.quantity}x ${item.product_name} – ${(item.price * item.quantity).toFixed(2)} €</li>`);
+        console.log("📧 Preparazione invio email a:", orderInfo.email);
+
+        const customerMessage = `
+      <h2>Ciao ${orderInfo.first_name}, grazie per il tuo ordine!</h2>
+      <p>Riepilogo:</p>
+      <ul>${groupedItems.join("")}</ul>
+      <p><strong>Totale: ${orderInfo.total_price.toFixed(2)} €</strong></p>
+      <p>Riceverai aggiornamenti sulla spedizione a questo indirizzo: ${orderInfo.email}</p>
+    `;
+
+        const adminMessage = `
+      <h2>Nuovo ordine completato</h2>
+      <p>Email cliente: ${orderInfo.email}</p>
+      <p>Totale: ${orderInfo.total_price.toFixed(2)} €</p>
+      <p>Ordine ID: ${orderInfo.id}</p>
+    `;
+
+        try {
+          await sendOrderConfirmation(orderInfo.email, "Conferma ordine - JW Shop", customerMessage);
+          await sendOrderConfirmation("admin@jwshop.com", "Nuovo ordine completato", adminMessage);
+          res.status(200).json({ message: "Stato aggiornato e email inviate" });
+        } catch (mailErr) {
+          console.error("Errore invio email:", mailErr);
+          res.status(200).json({ message: "Stato aggiornato, errore invio email" });
+        }
+      });
+    } else {
+      // Pagamento fallito: aggiorno solo stato
+      res.status(200).json({ message: "Stato aggiornato, nessuna email inviata" });
+    }
   });
 };
 

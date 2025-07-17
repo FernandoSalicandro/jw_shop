@@ -4,16 +4,18 @@ import nodemailer from "nodemailer";
 const transporter = nodemailer.createTransport({
   service: "gmail",
   auth: {
-    user: process.env.EMAIL_USER, // es: "yourshop@gmail.com"
-    pass: process.env.EMAIL_PASS, // una app password se usi Gmail!
+    user: process.env.EMAIL_USER,
+    pass: process.env.EMAIL_PASS,
   },
 });
 
 export const sendOrderConfirmation = async (toEmail, subject, htmlContent) => {
+  console.log("✅ Inviando mail a:", toEmail);
   await transporter.sendMail({
     from: `"JW Shop" <${process.env.EMAIL_USER}>`,
     to: toEmail,
     subject,
     html: htmlContent,
   });
+  console.log("✉️ sendOrderConfirmation chiamato per:", toEmail);
 };
