@@ -128,7 +128,7 @@ const confirmOrder = async (req, res) => {
             await sendOrderConfirmation(formData.email, "Conferma ordine - JW Shop", customerMessage);
 
             // Mail all'admin
-            await sendOrderConfirmation("admin@jwshop.com", "Nuovo ordine ricevuto", adminMessage);
+            await sendOrderConfirmation(process.env.EMAIL_USER, "Nuovo ordine ricevuto", adminMessage);
           } catch (emailErr) {
             console.error("Errore invio email:", emailErr);
             // Non bloccare la risposta se fallisce la mail
