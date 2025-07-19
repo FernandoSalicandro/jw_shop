@@ -5,10 +5,12 @@ import stripeController from "../controllers/stripeControllers.js";
 import processingOrder from "../controllers/orderController.js";
 import stockController from '../controllers/stockController.js';
 import discountCodeController from "../controllers/discountCodeController.js";
+import botController from "../controllers/botController.js";
 
 const router = express.Router();
 
 // Metti le rotte specifiche PRIMA delle rotte con parametri dinamici
+router.post('/bot', botController.botAnswer);
 router.get("/related/:slug", relatedController.related);
 router.get("/", jwController.index);
 router.get('/discount-code', discountCodeController.discount);
