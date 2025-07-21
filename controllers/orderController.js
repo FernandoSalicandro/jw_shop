@@ -70,6 +70,7 @@ const confirmOrder = async (req, res) => {
                 });
             }
 
+            
             const orderId = orderResult.insertId;
 
             // Calcola il fattore di sconto
