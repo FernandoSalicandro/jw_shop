@@ -15,7 +15,7 @@ const sendOrderEmails = async (req, res) => {
         // Verifica che tutti i campi necessari siano presenti
         const requiredFields = ['cart', 'customer', 'paymentIntentId', 'totalAmount'];
         const missingFields = requiredFields.filter(field => !orderDetails[field]);
-        
+
         if (missingFields.length > 0) {
             return res.status(400).json({
                 success: false,
@@ -41,31 +41,71 @@ const sendOrderEmails = async (req, res) => {
                 error: 'Carrello vuoto'
             });
         }
-        
+
         // Prepara il template HTML per l'email del cliente
         const customerHtml = `
-            <h2>Grazie per il tuo ordine su JW Shop!</h2>
-            <p>Ordine #${orderDetails.paymentIntentId}</p>
-            <h3>Riepilogo ordine:</h3>
-            <ul>
-                ${orderDetails.cart.map(item => `
-                    <li>
-                        ${item.name}<br>
-                        Quantità: ${item.quantity}<br>
-                        Prezzo: €${item.price}
-                    </li>
-                `).join('')}
-            </ul>
-            <p><strong>Totale ordine: €${orderDetails.totalAmount}</strong></p>
-            <h3>Dettagli spedizione:</h3>
-            <p>
-                ${orderDetails.customer.firstName} ${orderDetails.customer.lastName}<br>
-                ${orderDetails.customer.address}<br>
-                ${orderDetails.customer.city}, ${orderDetails.customer.postalCode || ''}<br>
-                ${orderDetails.customer.country}
-            </p>
+            <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-top: 40px; padding: 40px 0;">
+    <tr>
+        <td align="center">
+            <table width="600" cellpadding="0" cellspacing="0" border="0" bgcolor="black"
+                style="background-color: black; background-size: contain; background-repeat: no-repeat; padding: 20px; border-radius: 8px;">
+                <tr>
+                    <td style="font-family: Arial, sans-serif; color: white;">
+
+                        <h1 style="text-align: center; color: gold; padding-top: 20px;">JW LUX</h1>
+
+                        <h2 style="color: white; padding-top: 0px;">
+                            Grazie per aver scelto <strong>JW Shop</strong>! Il tuo ordine è stato ricevuto
+                            correttamente e verrà elaborato al più presto.
+                        </h2>
+
+                        <p style="font-size: 14px;">Ordine #${orderDetails.paymentIntentId}</p>
+
+                        <h3 style="color: gold;">Riepilogo ordine:</h3>
+                        <ul style="font-size: 14px; padding-left: 20px; color: white;">
+                            ${orderDetails.cart.map(item => `
+                            <li style="margin-bottom: 10px;">
+                                <strong>${item.name}</strong><br>
+                                Quantità: ${item.quantity}<br>
+                                Prezzo: €${item.price}
+                            </li>
+                            `).join('')}
+                        </ul>
+
+                        <p style="font-size: 18px; font-weight: bold;">Totale ordine: €${orderDetails.totalAmount}</p>
+
+                        <h3 style="color: gold;">Dettagli spedizione:</h3>
+                        <p style="font-size: 14px;">
+                            ${orderDetails.customer.firstName} ${orderDetails.customer.lastName}<br>
+                            ${orderDetails.customer.address}<br>
+                            ${orderDetails.customer.city}, ${orderDetails.customer.postalCode || ''}<br>
+                            ${orderDetails.customer.country}
+                        </p>
+
+                        <p style="font-family: Arial, sans-serif; font-size: 14px; color: white;">
+                            Non appena il tuo pacco sarà spedito, riceverai una nuova email con il link per tracciare la
+                            spedizione.
+                        </p>
+
+                        <p style="font-family: Arial, sans-serif; font-size: 14px; color: white;">
+                            Se hai bisogno di assistenza, puoi contattarci in qualsiasi momento rispondendo a questa
+                            email o visitando il nostro
+                            <a href="https://jwshop.it/contatti" style="color: gold;">centro assistenza</a>.
+                        </p>
+
+                        <p style="font-family: Arial, sans-serif; font-size: 14px; color: white;">
+                            A presto!<br>
+                            <strong>Il team di JW Shop</strong>
+                        </p>
+
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+</table>
         `;
-        
+
         // Prepara il template HTML per l'email dell'admin
         const adminHtml = `
             <h2>Nuovo ordine ricevuto!</h2>
@@ -109,13 +149,13 @@ const sendOrderEmails = async (req, res) => {
                 adminHtml
             );
 
-            res.status(200).json({ 
+            res.status(200).json({
                 success: true,
                 message: 'Email di conferma inviate con successo'
             });
         } catch (emailError) {
             console.error('Errore nell\'invio delle email:', emailError);
-            return res.status(500).json({ 
+            return res.status(500).json({
                 success: false,
                 error: 'Errore nell\'invio delle email di conferma'
             });
@@ -123,7 +163,7 @@ const sendOrderEmails = async (req, res) => {
 
     } catch (error) {
         console.error('Errore generico:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             success: false,
             error: 'Errore interno del server'
         });
